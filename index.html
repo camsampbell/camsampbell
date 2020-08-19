@@ -1,0 +1,462 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset='utf-8'>
+    <meta http-equiv='X-UA-Compatible' content='IE=edge,chrome=1'>
+    <title>'Mouse-Based CBM (PoC)'</title>
+    <meta name='description' content=''>
+    <meta name='viewport' content='width=device-width'>
+    <script type='text/javascript' src='http://ajax.googleapis.com/ajax/libs/jquery/2.1.0/jquery.min.js'></script>
+    <script src='https://d3js.org/d3.v5.min.js'></script>
+</head>
+<!--
+        For the sake of legibility, variable names in comments are surrounded with backticks, e.g., `varOne`.
+
+        Author: Samuel Campbell (sam.campbell@monash.edu)
+    -->
+
+<body>
+    <div id='cbmDisplay'></div>
+    <script>
+        function setOrder(binRange, binProp) {
+            /*
+                Iterates through the potential stimulus types, where 0 is neutral and 1 is non-neutral. For each,
+                loops over `orientIter`, which decriments from 1 to 0, taking the absolute value of `stimType` subtracted from `orientIter`,
+                resulting in `stimOrient` being 0 (for landscape) or 1 (for portrait). This is then appended to `orientations`.
+                
+                Returns a list of lists of the form, [`stimulus type`, `stimulus orientation`, `image url`].
+
+                Written this way to allow for expansion later down the line.
+            */
+            var bins = [binRange * binProp, binRange - (binRange * binProp)];
+
+            //console.log("bins");//***
+            //console.log(bins);//***
+
+            var orientations = [];
+
+            // `stimType` is the type of the stimulus: neutral (0) or non-neutral (1) 
+            for (var stimType = 0; stimType < 2; stimType++) {
+                for (var orientIter = 1; orientIter > -1; orientIter--) {
+                    // `stimOrient` is the orientation of the stimulus: landscape (0) or portrait (1)
+                    var stimOrient = Math.abs(orientIter - stimType);
+
+                    for (var dummyIter = 0; dummyIter < bins[orientIter]; dummyIter++) {
+                        orientations = [...orientations,
+                            {
+                                'stimType': stimType,
+                                'stimOrient': stimOrient,
+                                'stimUrl': null
+                            }
+                        ]; //'none']];
+
+                        //console.log(orientations);//***
+                    }
+                }
+            }
+
+            //console.log("orientations");//***
+            //console.log(orientations.length);//***
+            return orientations;
+        };
+
+        function randomiseOrder(unshuffledArray) {
+            /*
+                Shuffles an returns an array passed as an argument.
+
+                Used to populate `orderedOrientations` and `orderedImages` with a random permutation of `orientations` and `images`, respectively.
+
+                Takes a random index of the unshuffled array n times (where n is the number of objects in the array) and
+                appends the tuple at that index of `unshuffledArray` to `shuffledArray`.
+            */
+            // Instantiated here, as the length of `orientations` will change
+            var maxIter = unshuffledArray.length;
+
+            var shuffledArray = [];
+
+            for (var i = 0; i < maxIter; i++) {
+                // `rand` is an integer between 0 and the original length of `orientations`, minus 1
+                rand = Math.floor(Math.random() * unshuffledArray.length);
+
+                shuffledArray[i] = unshuffledArray[rand];
+
+                // Reinstantiate `orientations` as itself, sans the tuple at index `rand`
+                unshuffledArray = [...unshuffledArray.slice(0, rand), ...unshuffledArray.slice(rand + 1, unshuffledArray.length)];
+            }
+
+            return shuffledArray;
+        };
+
+        function assignDims() {
+            imgWidth = [windowWidth, windowHeight][imgList[imgIndx].stimOrient] * 0.5;
+            imgHeight = [windowHeight, windowWidth * 0.75][imgList[imgIndx].stimOrient] * 0.5;
+            rectWidth = imgWidth; // - 10;
+            rectHeight = imgHeight; // - 10;
+            imgX = (windowWidth / 2) - (imgWidth * 0.5);
+            imgY = (windowHeight / 2) - (imgHeight * 0.5);
+            rectX = imgX; // - 10;
+            rectY = imgY; // - 10;
+        };
+
+        function drawSvg() {
+            /*
+                Appends SVG 'panel' to the div, with dimensions relative to those of the screen.
+            */
+            panel = d3.select('#cbmDisplay')
+                .append('svg')
+                .attr('id', 'panel')
+                .attr('width', windowWidth)
+                .attr('height', windowHeight)
+                .style('margin-left', marginLeft + 'px')
+                .style('margin-top', marginTop + 'px');
+            //.style('background-color', 'grey');//***
+        };
+        
+        function instruct(instruction, instructionText=null, x=windowWidth/2, y=windowHeight/2) {//***
+            textItr = 0;
+            if (instructionText != null) {
+                var instructionTextArray = instructionText.split(/\s+/);
+                var textIter = 0;
+                var text = "";
+                for (i=0, l=instructionTextArray.length; i<l; i++) {
+                    text = text + instructionTextArray[i] + " ";
+
+                    if (text.length > 50 || i == l-1) {
+                        panel.append("text")
+                            .attr('class', 'preambleText')
+                            .text(text)
+                            .style("font-family", "sans-serif")
+                            .attr("text-anchor", "middle")
+                            .style("font-size", "1vw")
+                            .style("fill", "black")
+                            .attr("x", x)
+                            .attr("y", y + (20 * textItr));
+                            //.attr("dy", y + (16 * textItr));
+
+                        textItr++;
+                        text = "";
+                    };
+                };
+            };
+
+            panel.append("text")
+                .attr('class', 'preambleText')
+                .text(instruction)
+                .style("font-family", "sans-serif")
+                .attr("text-anchor", "middle")
+                .style("font-size", "1vw")
+                .style("fill", "black")
+                .attr("x", x)
+                .attr("y", y + (50 * textItr));
+                //.attr("dy", y + (16 * textItr));
+        };
+
+        function drawFigure() {
+            /*
+                Writes a framed image to the SVG `panel`.
+            */
+            panel.append('image')
+                .attr('class', 'pres')
+                .attr('id', 'image')
+                .attr('xlink:href', imgList[imgIndx].stimUrl)
+                .attr('x', imgX)
+                .attr('y', imgY)
+                .attr('width', imgWidth)
+                .attr('height', imgHeight);
+
+            panel.append('text')
+                .text(imgText[imgIndx])
+                .attr('class', 'presText')
+                .attr('x', (imgX + imgWidth / 2))
+                .attr('y', (imgY + imgHeight / 2))
+                .style('fill', 'black')
+                .style('font-size', fontSize + 'px')
+                .style('text-anchor', 'middle');
+
+            panel.append('rect')
+                .attr('class', 'pres')
+                .attr('x', rectX)
+                .attr('y', rectY)
+                .attr('width', rectWidth)
+                .attr('height', rectHeight)
+                .style('fill', 'none')
+                .style('stroke', 'black')
+                .style('stroke-width', borderThickness + 'px');
+        };
+
+        function handler(e) {
+            /*
+                Mouse movement handler.
+                * Maps the framed images' size to the position of the (hidden) cursor.
+                * Tracks the completion of a full extension of the mouse during each trial presentation.
+            */
+
+            e = e || window.event;
+
+            var pageX = e.pageX;
+            var pageY = e.pageY;
+
+            // IE 8
+            if (pageX === undefined) {
+                pageX = e.clientX + document.body.scrollLeft + document.documentElement.scrollLeft;
+                pageY = e.clientY + document.body.scrollTop + document.documentElement.scrollTop;
+            }
+
+            if (document.body.style.cursor == 'none') {
+                adjustObjects(pageX, pageY);
+
+                if ((pageY < marginTop && imgList[imgIndx].stimOrient === 0 /*landscape pushed*/ ) ||
+                    (pageY > marginTop + windowHeight && imgList[imgIndx].stimOrient === 1 /*portrait pulled*/ )) { // Full 'extension' and correct
+                    document.body.style.cursor = 'default';
+                    $('.pres').hide();
+                    $('.presText').hide();
+                    drawTarget('Correct.', true);
+                } else if (pageY < marginTop || pageY > marginTop + windowHeight) { // Full 'extension' and incorrect
+                    document.body.style.cursor = 'default';
+                    $('.pres').hide();
+                    $('.presText').hide();
+                    drawTarget('Incorrect.', false);
+                };
+            };
+        };
+
+        function adjustObjects(pageX, pageY) {
+            /*
+                Scales the framed images according to mouse position (passed as `pageX` and `pageY`).
+            */
+            assignDims();
+
+            var scale = (pageY / windowHeight) * 2;
+
+            d3.selectAll('.pres')
+                .attr('width', imgWidth * scale)
+                .attr('height', imgHeight * scale)
+                .attr('x', (windowWidth / 2) - (imgWidth * scale * 0.5))
+                .attr('y', (windowHeight / 2) - (imgHeight * scale * 0.5));
+
+            d3.selectAll('.presText')
+                .style('font-size', (fontSize * scale) + 'px');
+
+            d3.selectAll('#image')
+                .attr('xlink:href', imgList[imgIndx].stimUrl);
+        };
+
+        function drawTarget(target = 'Click Here', correct) {
+            /*
+                Writes text to `panel` (upon completion of a full extension during a trial presentation).
+            */
+            var targetCol;
+            if (correct) {
+                targetCol = 'green';
+            } else {
+                targetCol = 'red';
+            }
+
+            panel.append('text')
+                .text(target + ' Click Here.')
+                .attr('id', 'target')
+                .attr('x', (imgX + imgWidth / 2))
+                .attr('y', (imgY + imgHeight / 2))
+                .style('fill', targetCol)
+                .style('font-size', '50px')
+                .style('text-anchor', 'middle')
+                .on('click', function(e) {
+                    if (imgIndx === imgList.length - 1) {
+                        $('#target').remove();
+                        endScreen();
+                    } else {
+                        document.body.style.cursor = 'none';
+                        if (correct) {
+                            imgIndx++; // next pres
+                        };
+                        handler(e);
+                        $('.pres').show();
+                        d3.select('.presText')
+                            .text(imgText[imgIndx]);
+                        $('.presText').show();
+                        if (imgList[imgIndx].stimUrl !== 'none') {
+                            $('#image').show();
+                        };
+                        $('#target').remove();
+                    };
+                });
+        };
+
+        function endScreen() {
+            panel.append('text')
+                .text(endMessage)
+                .attr('x', (imgX + imgWidth / 2))
+                .attr('y', (imgY + imgHeight / 2))
+                .style('fill', 'black')
+                .style('font-size', '50px')
+                .style('text-anchor', 'middle');
+        };
+
+        // Assign initial variables (image and frame dimensions are instantiated as horizontally-oriented)
+        var binRange = 40,
+            binProp = 0.95,
+            propContent = 0.9,
+            propWhitespace = ((1 - propContent) / 4),
+            windowWidth = $(window).width() * propContent,
+            windowHeight = $(window).height() * propContent,
+            marginLeft = (windowWidth / propContent) * propWhitespace,
+            marginTop = (windowHeight / propContent) * propWhitespace,
+            fontSize = 100,
+            imgList = randomiseOrder(setOrder(binRange, binProp)),
+            imgNeutral = /*['https://cdnimg.webstaurantstore.com/images/products/extra_large/12689/310269.jpg'],*/[
+                'https://imgur.com/1I7d4PT.png',
+                'https://imgur.com/1lFjdqK.png',
+                'https://imgur.com/vaBhahi.png',
+                'https://imgur.com/ntDAyBk.png',
+                'https://imgur.com/Qpblzh2.png',
+                'https://imgur.com/cKpYxiF.png',
+                'https://imgur.com/7SR0tP5.png',
+                'https://imgur.com/Yt0eJk1.png'
+            ],
+            imgNonNeutral = /*['https://cdnimg.webstaurantstore.com/images/products/extra_large/12689/310269.jpg'],*/[
+                'https://imgur.com/AcCJ84D.png',
+                'https://imgur.com/RGnsBMv.png',
+                'https://imgur.com/4Ot19Wy.png',
+                'https://imgur.com/mB68vmu.png',
+                'https://imgur.com/NfgXP8E.png',
+                'https://imgur.com/wNkrg3V.png',
+                'https://imgur.com/zCSnof9.png',
+                'https://imgur.com/ir1QkLH.png'
+            ],
+            imgOrient = [0, 1], // 0=horizontal, 1=vertical //***
+            imgIndx = 0,
+            borderThickness = 10,
+            alreadyFired = false,
+            preambleMessage = ["[First instruction placeholder]"],
+            endMessage = "Congratulations, you have completed the task.";
+
+        //console.log(imgList);//***
+
+        while (imgNonNeutral.length < binRange) { //*** rm this and replace image lists with obvs full list of images
+            imgNeutral = [...imgNeutral, ...imgNeutral];
+            imgNonNeutral = [...imgNonNeutral, ...imgNonNeutral];
+        };
+
+        for (var i = 0, l = imgList.length; i < l; i++) {
+            if (imgList[i].stimType == 0) {
+                var t = imgNeutral[0];
+                imgNeutral = [...imgNeutral.slice(1, imgNeutral.length)];
+            } else {
+                var t = imgNonNeutral[0];
+                imgNonNeutral = [...imgNonNeutral.slice(1, imgNonNeutral.length)]
+            }
+
+            imgList[i].stimUrl = t;
+            //console.log(imgList);//***
+        };
+
+        // preamble stuff; adding to `imgList`
+        var imgText = ['Push', 'Pull', 'Push', 'Pull', 'Pull', 'Push'],
+            imgListPreamble = [{
+                    'stimType': 0,
+                    'stimOrient': 0,
+                    'stimUrl': null
+                },
+                {
+                    'stimType': 1,
+                    'stimOrient': 1,
+                    'stimUrl': null
+                },
+                {
+                    'stimType': 0,
+                    'stimOrient': 0,
+                    'stimUrl': null
+                },
+                {
+                    'stimType': 1,
+                    'stimOrient': 1,
+                    'stimUrl': null
+                },
+                {
+                    'stimType': 1,
+                    'stimOrient': 1,
+                    'stimUrl': null
+                },
+                {
+                    'stimType': 0,
+                    'stimOrient': 0,
+                    'stimUrl': null
+                }
+            ];
+        imgList = [...imgListPreamble, ...imgList];
+
+        //console.log(imgList);//***
+
+        // Randomly append appropriate values to the `img[...]` lists
+        //imgList = [...imgList, ...randomiseOrder(setOrder())];//***
+        //imgPath = randomiseOrder(imgPath);//***
+
+        //imgList = [...setOrder(binRange=5,prop=1), ...imgList]
+
+        console.log(imgList); //***
+
+        // Instantiate empty variables
+        var panel,
+            imgWidth,
+            imgHeight,
+            rectWidth,
+            rectHeight,
+            imgX,
+            imgY,
+            rectX,
+            rectY;
+
+        // Assign values to (most of the) empty variables
+        assignDims();
+
+        //console.log(rectY);//***
+
+        // Append SVG
+        drawSvg();
+
+        var preambleIndx = 0,
+            preambleDone = false;
+        
+        instruct('Press the spacebar to begin.', preambleMessage[preambleIndx]);
+
+        // Fire fullscreen and hide cursor requests on spacebar
+        addEventListener('keypress', function(event) {
+            //removeEventListener('keypress');
+            // Fullscreen request
+            var el = document.documentElement,
+                rfs = el.requestFullscreen ||
+                el.webkitRequestFullScreen ||
+                el.mozRequestFullScreen ||
+                el.msRequestFullscreen;
+
+            // Call fullscreen
+            rfs.call(el);
+            
+            // iterate through preamble
+            //***
+            
+            // done w/ preamble
+            if (preambleIndx === preambleMessage.length - 1 && event.which === 32) {
+                preambleDone = true;
+            }
+            
+            if (preambleDone && !alreadyFired && event.which === 32) { // 32===spacebar
+                $('.preambleText').remove();
+                
+                // Hide cursor
+                document.body.style.cursor = 'none';
+
+                // Plot framed image
+                drawFigure();
+
+                // Attach `handler` to the mousemove event of the document
+                $(document).on('mousemove', handler);
+
+                // Prevent this if block being rerun
+                alreadyFired = true;
+            };
+        });
+    </script>
+</body>
+</html>
